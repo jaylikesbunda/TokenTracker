@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>TokenTracker</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="9" stroke="#92b2da" stroke-width="2.6"/>
+              <text x="12" y="16.3" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" font-size="12.5" font-weight="700" fill="#afc6e4">T</text>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">TokenTracker</span>
+            <span class="brand-tag">agent token &amp; cost tracker</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span class="last-updated" id="last-updated">—</span>
+          <button class="btn btn-primary" id="btn-refresh">↻ Refresh</button>
+        </div>
+      </header>
+
+      <main id="content">
+        <div id="loading" class="loading">
+          <div class="spinner"></div>
+          <p>Scanning local agent data…</p>
+        </div>
+
+        <div id="dashboard" class="hidden">
+          <div id="errors" class="errors hidden"></div>
+
+          <section class="stats-grid" id="stats-grid"></section>
+
+          <section class="panel" id="quota-panel">
+            <div class="panel-head">
+              <h2>Live quotas</h2>
+              <span class="panel-sub">reusing your existing logins · no new credentials</span>
+            </div>
+            <div class="quota-grid" id="quota-grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Spend — last 14 days</h2>
+            </div>
+            <div class="chart-wrap" id="chart"></div>
+          </section>
+
+          <section class="agent-grid" id="agent-grid"></section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Recent sessions</h2>
+              <span class="panel-sub">grouped per conversation</span>
+            </div>
+            <div class="table-wrap" id="sessions-table"></div>
+          </section>
+        </div>
+      </main>
+
+      <footer class="statusbar">
+        <span id="status-left">Ready</span>
+        <span id="status-right">TokenTracker</span>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
