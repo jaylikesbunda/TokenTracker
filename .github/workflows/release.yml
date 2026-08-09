@@ -1,10 +1,14 @@
 name: release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number (e.g. 0.2.0)"
+        required: true
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -35,7 +41,26 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build and release NSIS installer
+      - name: Bump version
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $v = "${{ inputs.version }}".Trim().TrimStart('v')
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid version '$v' — use semver like 0.2.0" }
+          foreach ($f in @('package.json', 'src-tauri/tauri.conf.json')) {
+            (Get-Content $f -Raw) -replace '"(version)":\s*"[^"]*"', "`"`$1`": `"$v`"" | Set-Content $f -NoNewline
+          }
+          (Get-Content src-tauri/Cargo.toml -Raw) -replace '(?m)^version\s*=\s*"[^"]*"', "version = `"$v`"" | Set-Content src-tauri/Cargo.toml -NoNewline
+          $lock = Get-Content src-tauri/Cargo.lock -Raw
+          $lock = $lock -replace '(?m)^name = "tokentracker"\r?\nversion = "[^"]*"', "name = `"tokentracker`"`r`nversion = `"$v`""
+          Set-Content src-tauri/Cargo.lock -Value $lock -NoNewline
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "release v$v"
+          git push origin main
+
+      - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,5 +74,5 @@ jobs:
 
             ### What's new
             - See the commit history for this release.
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false

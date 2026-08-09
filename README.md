@@ -59,7 +59,7 @@ powershell -File scripts/generate-icons.ps1
 
 1. Bump `version` in `src-tauri/tauri.conf.json` and `package.json`.
 2. Push a tag: `git tag v0.1.0 && git push origin v0.1.0`
-3. The [`release` workflow](.github/workflows/release.yml) builds on `windows-latest` with `tauri-action` and uploads a draft GitHub Release containing the NSIS installer (`TokenTracker_x64-setup.exe`).
+3. The [`release` workflow](.github/workflows/release.yml) builds on `windows-latest` with `tauri-action`. Trigger it from the **Actions → release → Run workflow** page and type the version number (e.g. `0.2.0`) — it bumps the version, builds, and publishes a GitHub Release containing the NSIS installer (`TokenTracker_<version>_x64-setup.exe`). Pushing a `v*` tag also triggers the same build.
 
 Run the workflow manually from the Actions tab to build without a tag.
 
