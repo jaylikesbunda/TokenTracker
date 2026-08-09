@@ -9,6 +9,9 @@ A desktop app that blends two ideas:
 
 Built with [Tauri v2](https://v2.tauri.app/) (Rust + web UI). Windows NSIS installer is built automatically by GitHub Actions.
 
+<img width="954" height="592" alt="image" src="https://github.com/user-attachments/assets/17767692-0c6b-48af-af6f-21c52a858a71" />
+
+
 ## Features
 
 - **System tray presence** — tray icon with today's spend, left-click toggles the dashboard, close-to-tray
