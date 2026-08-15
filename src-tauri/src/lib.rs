@@ -1,5 +1,6 @@
 mod auth;
 mod cache;
+mod history;
 mod live;
 mod model;
 mod pricing;
@@ -232,7 +233,7 @@ fn build_result(records: Vec<UsageRecord>, quotas: Vec<model::QuotaProvider>, er
     sessions.truncate(100);
 
     let mut t_all = all_t.clone();
-    t_all.sessions = sessions.len() as u64;
+    t_all.sessions = distinct_sessions(&records, |_| true);
 
     RefreshResult {
         generated_at: now_secs(),
@@ -272,6 +273,22 @@ fn scan_all(state: &AppState) -> RefreshResult {
     records.extend(opencode.records);
 
     drop(cache);
+
+    // Persist what we scanned so pruned/rotated source files never shrink
+    // the all-time totals, then aggregate from the accumulated store.
+    let records = match history::upsert(&records) {
+        Ok(()) => match history::all() {
+            Ok(history) => history,
+            Err(e) => {
+                errors.push(format!("History store: {}", e));
+                records
+            }
+        },
+        Err(e) => {
+            errors.push(format!("History store: {}", e));
+            records
+        }
+    };
 
     let quotas = {
         const QUOTA_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);

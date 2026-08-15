@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock, RwLock};
@@ -8,7 +8,7 @@ const PRICING_URL: &str = "https://raw.githubusercontent.com/BerriAI/litellm/mai
 const REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const RETRY_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
-#[derive(Default, Deserialize, Clone)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Price {
     #[serde(default)]
     pub input_cost_per_token: f64,
@@ -68,7 +68,9 @@ fn curated_sheet(raw: &str) -> Option<HashMap<String, Price>> {
         if !keep_model(&key) {
             continue;
         }
-        let price: Price = serde_json::from_value(value).ok()?;
+        let Ok(price) = serde_json::from_value::<Price>(value) else {
+            continue;
+        };
         if price.input_cost_per_token == 0.0 && price.output_cost_per_token == 0.0 {
             continue;
         }

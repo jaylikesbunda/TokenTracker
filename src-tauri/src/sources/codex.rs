@@ -85,7 +85,34 @@ pub fn scan(cache: &mut FileCache, errors: &mut Vec<String>) -> Source {
         errors.push("Codex CLI: no session data found".into());
     }
 
-    Source { records: all }
+    // A session can appear in the legacy jsonl and in every state_*.sqlite
+    // snapshot (full copies of the threads table). Keep only the most
+    // complete copy per session so totals don't double count or jump when
+    // old state files are pruned.
+    let mut by_session: std::collections::HashMap<String, Vec<UsageRecord>> =
+        std::collections::HashMap::new();
+    for r in all {
+        by_session.entry(r.session_id.clone()).or_default().push(r);
+    }
+    let mut deduped: Vec<UsageRecord> = Vec::new();
+    for group in by_session.into_values() {
+        let mut by_path: std::collections::HashMap<String, Vec<UsageRecord>> =
+            std::collections::HashMap::new();
+        for r in group {
+            by_path.entry(r.path.clone()).or_default().push(r);
+        }
+        let mut best = by_path
+            .into_values()
+            .max_by_key(|rs| {
+                rs.iter()
+                    .map(|r| r.input + r.output + r.cache_creation + r.cache_read)
+                    .sum::<u64>()
+            })
+            .unwrap_or_default();
+        deduped.append(&mut best);
+    }
+
+    Source { records: deduped }
 }
 
 fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
