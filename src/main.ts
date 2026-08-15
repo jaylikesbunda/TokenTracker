@@ -462,7 +462,7 @@ function renderStatus() {
 
 async function refreshUI() {
   try {
-    result = await invoke<RefreshResult>("refresh", { force: true });
+    result = await invoke<RefreshResult>("refresh", { force: false });
   } catch (e) {
     $("loading").classList.add("hidden");
     $("dashboard").classList.remove("hidden");

@@ -12,6 +12,10 @@ pub struct FileCache {
 }
 
 impl FileCache {
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
     pub fn get(&self, path: &PathBuf, mtime: SystemTime, size: u64) -> Option<Vec<UsageRecord>> {
         self.entries
             .get(path)

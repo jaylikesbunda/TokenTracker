@@ -22,6 +22,7 @@ pub struct AppState {
     cache: Mutex<FileCache>,
     result: Mutex<Option<RefreshResult>>,
     last_refresh: Mutex<Option<Instant>>,
+    quotas: Mutex<Option<(Instant, Vec<model::QuotaProvider>)>>,
     busy: AtomicBool,
 }
 
@@ -31,6 +32,7 @@ impl Default for AppState {
             cache: Mutex::new(FileCache::default()),
             result: Mutex::new(None),
             last_refresh: Mutex::new(None),
+            quotas: Mutex::new(None),
             busy: AtomicBool::new(false),
         }
     }
@@ -253,6 +255,10 @@ fn build_result(records: Vec<UsageRecord>, quotas: Vec<model::QuotaProvider>, er
 fn scan_all(state: &AppState) -> RefreshResult {
     let mut errors: Vec<String> = Vec::new();
 
+    if pricing::refresh_if_due() {
+        state.cache.lock().unwrap().clear();
+    }
+
     let mut cache = state.cache.lock().unwrap();
     let mut records: Vec<UsageRecord> = Vec::new();
 
@@ -267,7 +273,18 @@ fn scan_all(state: &AppState) -> RefreshResult {
 
     drop(cache);
 
-    let quotas = live::fetch_all();
+    let quotas = {
+        const QUOTA_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+        let mut cached = state.quotas.lock().unwrap();
+        if let Some((at, quotas)) = cached.as_ref().filter(|(at, _)| at.elapsed() < QUOTA_REFRESH_INTERVAL) {
+            let _ = at;
+            quotas.clone()
+        } else {
+            let quotas = live::fetch_all();
+            *cached = Some((Instant::now(), quotas.clone()));
+            quotas
+        }
+    };
     build_result(records, quotas, errors)
 }
 
@@ -480,6 +497,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Arc::new(AppState::default()))
         .setup(|app| {
+            pricing::initialize();
             let tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("TokenTracker")
