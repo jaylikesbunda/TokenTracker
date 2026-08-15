@@ -1008,10 +1008,12 @@ fn fetch_opencode_local() -> QuotaProvider {
 
     let run = |from_ms: i64| -> (f64, u64, u64) {
         let Ok(conn) = rusqlite::Connection::open(&db) else { return (0.0, 0, 0) };
-        let mut stmt = match conn.prepare(
+        let table = crate::sources::opencode::session_table(&conn);
+        let mut stmt = match conn.prepare(&format!(
             "SELECT COALESCE(SUM(cost),0), COALESCE(SUM(tokens_input),0)+COALESCE(SUM(tokens_output),0), COUNT(*) \
-             FROM session WHERE time_created >= ?1 AND time_created < ?2",
-        ) {
+             FROM {} WHERE time_created >= ?1 AND time_created < ?2",
+            table
+        )) {
             Ok(s) => s,
             Err(_) => return (0.0, 0, 0),
         };

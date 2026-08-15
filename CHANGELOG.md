@@ -11,6 +11,8 @@
 - All-time totals no longer double-count Codex sessions that exist in both the legacy jsonl and `state_*.sqlite` snapshots, and no longer jump when old Codex state files are removed.
 - All-time session count is no longer capped at 100 (it previously used the truncated recent-sessions list).
 - A single malformed model entry in the LiteLLM sheet no longer aborts the whole price refresh.
+- OpenCode sessions are now always priced from TokenTracker's own sheet (falling back to the stored cost only for unknown models), so stale or zero stored costs — e.g. `gpt-5.6-sol` sessions OpenCode ran before it knew the price — no longer show $0.00.
+- OpenCode beta sessions are now tracked: the beta channel writes to the `session_v2` table (newer opencode schema) while the legacy `session` table stays frozen. Both tables are read and merged per session, preferring the live copy.
 
 ### Changed
 - Quota polling is now throttled: Claude Code / Codex / OpenCode live usage endpoints are hit at most once per 5 minutes, even when the dashboard is manually refreshed.

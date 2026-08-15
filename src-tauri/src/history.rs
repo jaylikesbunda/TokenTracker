@@ -125,13 +125,11 @@ pub fn all() -> Result<Vec<UsageRecord>, String> {
         let Ok((agent, path, session_id, ts, model, title, cwd, input, output, cache_creation, cache_read, cost)) = row else {
             continue;
         };
-        let Some(agent) = match agent.as_str() {
-            "Claude Code" => Some(AGENT_CLAUDE),
-            "Codex CLI" => Some(AGENT_CODEX),
-            "OpenCode" => Some(AGENT_OPENCODE),
-            _ => None,
-        } else {
-            continue;
+        let agent = match agent.as_str() {
+            "Claude Code" => AGENT_CLAUDE,
+            "Codex CLI" => AGENT_CODEX,
+            "OpenCode" => AGENT_OPENCODE,
+            _ => continue,
         };
         records.push(UsageRecord {
             agent,
