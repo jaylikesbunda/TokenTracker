@@ -82,25 +82,26 @@ jobs:
           });
           updateJson("src-tauri/tauri.conf.json", (value) => { value.version = version; });
 
-          function updateText(path, pattern, replacement) {
+          function updateCargoVersion(path, marker) {
             const raw = fs.readFileSync(path, "utf8");
-            const updated = raw.replace(pattern, replacement);
-            if (updated === raw) {
+            const newline = raw.includes("\r\n") ? "\r\n" : "\n";
+            const lines = raw.split(/\r?\n/);
+            const start = lines.findIndex((line) => line.trim() === marker);
+            const end = lines.findIndex((line, index) => index > start && line.trim().startsWith("["));
+            const stop = end === -1 ? lines.length : end;
+            const versionLine = lines.findIndex(
+              (line, index) => index > start && index < stop && /^\s*version\s*=\s*"[^"]*"/.test(line),
+            );
+            if (start === -1 || versionLine === -1) {
               throw new Error(`Could not update version in ${path}`);
             }
-            fs.writeFileSync(path, updated);
+            const indent = lines[versionLine].match(/^\s*/)[0];
+            lines[versionLine] = `${indent}version = "${version}"`;
+            fs.writeFileSync(path, lines.join(newline));
           }
 
-          updateText(
-            "src-tauri/Cargo.toml",
-            /(\[package\][\s\S]*?\nversion\s*=\s*")[^"]+(")/,
-            `$1${version}$2`,
-          );
-          updateText(
-            "src-tauri/Cargo.lock",
-            /(name = "tokentracker"\r?\nversion = ")[^"]+(")/,
-            `$1${version}$2`,
-          );
+          updateCargoVersion("src-tauri/Cargo.toml", "[package]");
+          updateCargoVersion("src-tauri/Cargo.lock", 'name = "tokentracker"');
           NODE
 
       - name: Verify version files
@@ -118,12 +119,24 @@ jobs:
           for (const [path, actual] of jsonVersions) {
             if (actual !== expected) throw new Error(`${path} is ${actual}, expected ${expected}`);
           }
+          function cargoPackageVersion(raw, marker) {
+            const lines = raw.split(/\r?\n/);
+            const start = lines.findIndex((line) => line.trim() === marker);
+            const end = lines.findIndex((line, index) => index > start && line.trim().startsWith("["));
+            const stop = end === -1 ? lines.length : end;
+            for (let index = start + 1; index < stop; index += 1) {
+              const match = lines[index].match(/^\s*version\s*=\s*"([^"]*)"/);
+              if (match) return match[1];
+            }
+            return null;
+          }
+
           const cargo = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
           const lock = fs.readFileSync("src-tauri/Cargo.lock", "utf8");
-          if (!new RegExp(`\\[package\\][\\s\\S]*?\\nversion\\s*=\\s*"${expected.replaceAll(".", "\\.")}"`).test(cargo)) {
+          if (cargoPackageVersion(cargo, "[package]") !== expected) {
             throw new Error("src-tauri/Cargo.toml has the wrong version");
           }
-          if (!new RegExp(`name = "tokentracker"\\r?\\nversion = "${expected.replaceAll(".", "\\.")}"`).test(lock)) {
+          if (cargoPackageVersion(lock, 'name = "tokentracker"') !== expected) {
             throw new Error("src-tauri/Cargo.lock has the wrong version");
           }
           NODE
