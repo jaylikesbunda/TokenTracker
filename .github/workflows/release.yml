@@ -93,12 +93,12 @@ jobs:
 
           updateText(
             "src-tauri/Cargo.toml",
-            /(\[package\][\s\S]*?\nversion\s*=\s*")[^"]+("/),
+            /(\[package\][\s\S]*?\nversion\s*=\s*")[^"]+(")/,
             `$1${version}$2`,
           );
           updateText(
             "src-tauri/Cargo.lock",
-            /(name = "tokentracker"\r?\nversion = ")[^"]+("/),
+            /(name = "tokentracker"\r?\nversion = ")[^"]+(")/,
             `$1${version}$2`,
           );
           NODE
