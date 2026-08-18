@@ -30,7 +30,10 @@
     "shortDescription": "Track local AI coding agent token usage and cost",
     "longDescription": "TokenTracker monitors local AI coding agent usage and presents token totals, costs, sessions, and provider quotas in the system tray.",
     "license": "MIT",
-    "targets": ["nsis", "deb"],
+    "targets": [
+      "nsis",
+      "deb"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,14 +42,18 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["xdg-utils"]
+        "depends": [
+          "xdg-utils"
+        ]
       }
     },
     "windows": {
       "nsis": {
         "installMode": "currentUser",
         "compression": "lzma",
-        "languages": ["English"]
+        "languages": [
+          "English"
+        ]
       }
     }
   }
