@@ -122,6 +122,7 @@ jobs:
           function cargoPackageVersion(raw, marker) {
             const lines = raw.split(/\r?\n/);
             const start = lines.findIndex((line) => line.trim() === marker);
+            if (start === -1) return null;
             const end = lines.findIndex((line, index) => index > start && line.trim().startsWith("["));
             const stop = end === -1 ? lines.length : end;
             for (let index = start + 1; index < stop; index += 1) {
