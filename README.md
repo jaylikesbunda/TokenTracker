@@ -1,13 +1,13 @@
 # TokenTracker
 
-Every AI coding token and dollar your agents burn — in your Windows system tray.
+Every AI coding token and dollar your agents burn — in your system tray.
 
 A desktop app that blends two ideas:
 
 - **ccusage-style tracking** — parses your local agent usage data (Claude Code, Codex CLI, OpenCode) into daily/weekly/monthly totals, per-model costs and session history. No account, no API key needed.
 - **CodexBar-style live limits** — shows live provider quota windows (Claude Code 5-hour/weekly tiers, Codex rate limits + credits) with reset countdowns, reusing the logins you already have.
 
-Built with [Tauri v2](https://v2.tauri.app/) (Rust + web UI). Windows NSIS installer is built automatically by GitHub Actions.
+Built with [Tauri v2](https://v2.tauri.app/) (Rust + web UI). Windows NSIS installers and Linux Debian packages are built automatically by GitHub Actions.
 
 <img width="954" height="592" alt="image" src="https://github.com/user-attachments/assets/17767692-0c6b-48af-af6f-21c52a858a71" />
 
@@ -40,7 +40,7 @@ Prerequisites: [Node.js](https://nodejs.org) 18+, [Rust](https://rustup.rs) stab
 ```sh
 npm install
 npm run tauri dev      # hot-reload dev app
-npm run tauri build    # builds release NSIS installer locally
+npm run tauri build    # builds the platform package locally
 ```
 
 Tests:
@@ -55,11 +55,11 @@ Regenerate icons:
 powershell -File scripts/generate-icons.ps1
 ```
 
-## Release (GitHub Actions → NSIS .exe)
+## Release (GitHub Actions → NSIS .exe and Debian .deb)
 
-1. Bump `version` in `src-tauri/tauri.conf.json` and `package.json`.
-2. Push a tag: `git tag v0.1.0 && git push origin v0.1.0`
-3. The [`release` workflow](.github/workflows/release.yml) builds on `windows-latest` with `tauri-action`. Trigger it from the **Actions → release → Run workflow** page and type the version number (e.g. `0.2.0`) — it bumps the version, builds, and publishes a GitHub Release containing the NSIS installer (`TokenTracker_<version>_x64-setup.exe`). Pushing a `v*` tag also triggers the same build.
+1. Keep the version fields synchronized for tag releases, or use the manual workflow to update them automatically.
+2. Push a tag: `git tag v0.2.0 && git push origin v0.2.0`
+3. The [`release` workflow](.github/workflows/release.yml) builds the NSIS installer on Windows and a Debian package on Ubuntu 22.04. Trigger it from the **Actions → release → Run workflow** page and type the version number (e.g. `0.2.0`) — it bumps the version, builds both packages, and publishes a GitHub Release. Pushing a `v*` tag also triggers the same build.
 
 Run the workflow manually from the Actions tab to build without a tag.
 

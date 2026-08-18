@@ -13,8 +13,173 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      source_ref: ${{ steps.source.outputs.ref }}
+      release_id: ${{ steps.create-release.outputs.release_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Resolve release version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="${DISPATCH_VERSION#v}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version '$version' - use semver like 0.2.0" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Update version files
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const version = process.env.RELEASE_VERSION;
+
+          function updateJson(path, update) {
+            const value = JSON.parse(fs.readFileSync(path, "utf8"));
+            update(value);
+            fs.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+          }
+
+          updateJson("package.json", (value) => { value.version = version; });
+          updateJson("package-lock.json", (value) => {
+            value.version = version;
+            if (value.packages && value.packages[""]) {
+              value.packages[""].version = version;
+            }
+          });
+          updateJson("src-tauri/tauri.conf.json", (value) => { value.version = version; });
+
+          function updateText(path, pattern, replacement) {
+            const raw = fs.readFileSync(path, "utf8");
+            const updated = raw.replace(pattern, replacement);
+            if (updated === raw) {
+              throw new Error(`Could not update version in ${path}`);
+            }
+            fs.writeFileSync(path, updated);
+          }
+
+          updateText(
+            "src-tauri/Cargo.toml",
+            /(\[package\][\s\S]*?\nversion\s*=\s*")[^"]+("/),
+            `$1${version}$2`,
+          );
+          updateText(
+            "src-tauri/Cargo.lock",
+            /(name = "tokentracker"\r?\nversion = ")[^"]+("/),
+            `$1${version}$2`,
+          );
+          NODE
+
+      - name: Verify version files
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const expected = process.env.RELEASE_VERSION;
+          const jsonVersions = [
+            ["package.json", JSON.parse(fs.readFileSync("package.json", "utf8")).version],
+            ["package-lock.json", JSON.parse(fs.readFileSync("package-lock.json", "utf8")).version],
+            ["src-tauri/tauri.conf.json", JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8")).version],
+          ];
+          for (const [path, actual] of jsonVersions) {
+            if (actual !== expected) throw new Error(`${path} is ${actual}, expected ${expected}`);
+          }
+          const cargo = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          const lock = fs.readFileSync("src-tauri/Cargo.lock", "utf8");
+          if (!new RegExp(`\\[package\\][\\s\\S]*?\\nversion\\s*=\\s*"${expected.replaceAll(".", "\\.")}"`).test(cargo)) {
+            throw new Error("src-tauri/Cargo.toml has the wrong version");
+          }
+          if (!new RegExp(`name = "tokentracker"\\r?\\nversion = "${expected.replaceAll(".", "\\.")}"`).test(lock)) {
+            throw new Error("src-tauri/Cargo.lock has the wrong version");
+          }
+          NODE
+
+      - name: Commit version bump
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Version files already use v$RELEASE_VERSION"
+          else
+            git commit -m "release v$RELEASE_VERSION"
+            git push origin HEAD:main
+          fi
+
+      - name: Record source revision
+        id: source
+        run: echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        id: create-release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          SOURCE_REF: ${{ steps.source.outputs.ref }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag = process.env.RELEASE_TAG;
+            let release;
+
+            try {
+              release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              release = await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                target_commitish: process.env.SOURCE_REF,
+                name: `TokenTracker ${tag}`,
+                body: `## TokenTracker ${tag}\n\nDownload the Windows NSIS installer or Debian package below.\n\n### What's new\n- See the commit history for this release.`,
+                draft: true,
+                prerelease: false,
+              });
+            }
+
+            core.setOutput("release_id", String(release.data.id));
+
   build-nsis:
+    needs: prepare-release
     runs-on: windows-latest
     timeout-minutes: 60
 
@@ -22,6 +187,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.prepare-release.outputs.source_ref }}
           fetch-depth: 0
 
       - name: Setup Node
@@ -41,38 +207,85 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Bump version
-        if: github.event_name == 'workflow_dispatch'
-        shell: pwsh
-        run: |
-          $v = "${{ inputs.version }}".Trim().TrimStart('v')
-          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid version '$v' — use semver like 0.2.0" }
-          foreach ($f in @('package.json', 'src-tauri/tauri.conf.json')) {
-            (Get-Content $f -Raw) -replace '"(version)":\s*"[^"]*"', "`"`$1`": `"$v`"" | Set-Content $f -NoNewline
-          }
-          (Get-Content src-tauri/Cargo.toml -Raw) -replace '(?m)^version\s*=\s*"[^"]*"', "version = `"$v`"" | Set-Content src-tauri/Cargo.toml -NoNewline
-          $lock = Get-Content src-tauri/Cargo.lock -Raw
-          $lock = $lock -replace '(?m)^name = "tokentracker"\r?\nversion = "[^"]*"', "name = `"tokentracker`"`r`nversion = `"$v`""
-          Set-Content src-tauri/Cargo.lock -Value $lock -NoNewline
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
-          git commit -m "release v$v"
-          git push origin main
-
-      - name: Build and publish release
+      - name: Build and upload NSIS installer
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: "TokenTracker v__VERSION__"
-          releaseBody: |
-            ## TokenTracker v__VERSION__
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          includeUpdaterJson: false
+          args: --bundles nsis
 
-            **Windows installer (NSIS):** download `TokenTracker_<version>_x64-setup.exe`, run it and TokenTracker is installed without admin rights. It lives in your system tray — click the icon to open the dashboard.
+  build-deb:
+    needs: prepare-release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
 
-            ### What's new
-            - See the commit history for this release.
-          releaseDraft: false
-          prerelease: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.source_ref }}
+          fetch-depth: 0
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and upload Debian package
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          includeUpdaterJson: false
+          args: --bundles deb
+
+  publish-release:
+    needs: [prepare-release, build-nsis, build-deb]
+    if: ${{ needs.build-nsis.result == 'success' && needs.build-deb.result == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Publish release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: Number(process.env.RELEASE_ID),
+              draft: false,
+              prerelease: false,
+            });

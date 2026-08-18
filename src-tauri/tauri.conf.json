@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TokenTracker",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "identifier": "com.tokentracker.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -26,13 +26,22 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "category": "Utility",
+    "shortDescription": "Track local AI coding agent token usage and cost",
+    "longDescription": "TokenTracker monitors local AI coding agent usage and presents token totals, costs, sessions, and provider quotas in the system tray.",
+    "license": "MIT",
+    "targets": ["nsis", "deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ],
+    "linux": {
+      "deb": {
+        "depends": ["xdg-utils"]
+      }
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser",
