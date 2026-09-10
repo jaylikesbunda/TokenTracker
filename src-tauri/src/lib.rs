@@ -272,6 +272,15 @@ fn scan_all(state: &AppState) -> RefreshResult {
     let opencode = sources::opencode::scan(&mut cache, &mut errors);
     records.extend(opencode.records);
 
+    let commandcode = sources::commandcode::scan(&mut cache, &mut errors);
+    records.extend(commandcode.records);
+
+    let osagent = sources::osagent::scan(&mut cache, &mut errors);
+    records.extend(osagent.records);
+
+    let freebuff = sources::freebuff::scan(&mut cache, &mut errors);
+    records.extend(freebuff.records);
+
     drop(cache);
 
     // Persist what we scanned so pruned/rotated source files never shrink

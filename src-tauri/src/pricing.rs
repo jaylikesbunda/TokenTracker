@@ -86,7 +86,7 @@ fn curated_sheet(raw: &str) -> Option<HashMap<String, Price>> {
             prices.insert(alias.to_string(), price);
         }
     }
-    for free in ["deepseek-v4-flash-free", "qwen3.6-plus-free", "mimo-v2.5-free", "nemotron-3-ultra-free"] {
+    for free in ["deepseek-v4-flash-free", "qwen3.6-plus-free", "mimo-v2.5-free", "nemotron-3-ultra-free", "openrouter/free"] {
         prices.insert(free.to_string(), Price::default());
     }
     Some(prices)

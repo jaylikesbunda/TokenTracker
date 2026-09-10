@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0] - 2026-09-10
+
+### Added
+- CommandCode CLI tracking: per-message `usage` (with billed `costUsd`) from `~/.commandcode/projects/**/*.jsonl`, titles from sibling `.meta.json` files.
+- OSAgent tracking: per-message tokens from `~/.osagent/osagent.db` (`session_transcript` joined to `sessions` model/title).
+- FreeBuff tracking: per-turn usage from `~/.config/freebuff-desktop/projects/*/desktop-v2.db` (assistant `messages.metrics_json.usage`).
+- Codex CLI now parses the current rollout format: per-response `token_usage_record` events with the model resolved via surrounding `turn_context` entries, plus legacy `token_count` (`payload.info.last_token_usage`) events. Cached tokens are split into their own buckets and session ids come from the payload instead of the filename.
+
+### Fixed
+- Codex sessions no longer show up as `unknown` model with $0.00 (e.g. a 129M-token session that previously priced at zero now attributes to `gpt-5.6-luna`/`gpt-5.6-sol`).
+- History no longer accumulates a fresh cumulative snapshot of every running sqlite-backed session on each refresh, which inflated OpenCode all-time totals ~29x (and produced a phantom $2,540 day). Snapshot sources (`.db`/`.sqlite`) now replace their per-session rows instead of appending.
+- One-time repair drops stale `unknown`-model Codex rows for files the fixed parser now resolves.
+- Codex `state_*.sqlite` index is now only a fallback for sessions with no jsonl usage (plus title/cwd/model enrichment) instead of competing with the accurate per-response records.
+
+### Changed
+- `openrouter/free` is treated as a free-tier model so it is no longer flagged unpriced.
+
 ## [0.1.1] - 2026-08-15
 
 ### Added

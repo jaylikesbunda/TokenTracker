@@ -81,12 +81,18 @@ const AGENT_COLORS: Record<string, string> = {
   "Claude Code": "#b08a5a",
   "Codex CLI": "#6a9b80",
   OpenCode: "#8f9bb8",
+  CommandCode: "#7aa2c4",
+  OSAgent: "#a98bc4",
+  FreeBuff: "#c4a27a",
 };
 
 const AGENT_MONOGRAMS: Record<string, string> = {
   "Claude Code": "CC",
   "Codex CLI": "CX",
   OpenCode: "OC",
+  CommandCode: "CM",
+  OSAgent: "OA",
+  FreeBuff: "FB",
 };
 
 let result: RefreshResult | null = null;

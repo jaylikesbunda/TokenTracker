@@ -4104,6 +4104,7 @@
   "input_cost_per_token": 2e-07,
   "output_cost_per_token": 4e-07
  },
+ "openrouter/free": {},
  "openrouter/google/gemini-2.0-flash-001": {
   "input_cost_per_token": 1e-07,
   "output_cost_per_token": 4e-07

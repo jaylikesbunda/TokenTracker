@@ -21,6 +21,7 @@ FREE_OVERRIDES = {
     "qwen3.6-plus-free": {},
     "mimo-v2.5-free": {},
     "nemotron-3-ultra-free": {},
+    "openrouter/free": {},
 }
 
 # Model ids as reported by opencode's gateway, aliased to LiteLLM keys.

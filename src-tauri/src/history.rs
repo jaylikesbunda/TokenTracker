@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use rusqlite::Connection;
 
 use crate::model::UsageRecord;
-use crate::sources::{AGENT_CLAUDE, AGENT_CODEX, AGENT_OPENCODE};
+use crate::sources::{AGENT_CLAUDE, AGENT_CODEX, AGENT_COMMANDCODE, AGENT_FREEBUFF, AGENT_OPENCODE, AGENT_OSAGENT};
 
 pub fn db_path() -> Option<PathBuf> {
     let home = crate::sources::home_dir()?;
@@ -57,6 +57,57 @@ pub fn upsert(records: &[UsageRecord]) -> Result<(), String> {
     let mut conn = open()?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     {
+        // Snapshot sources (sqlite DBs) report cumulative per-session totals
+        // that grow between scans. Keying on the counters would append a new
+        // row per refresh and inflate totals ~100x, so replace each fresh
+        // snapshot session's rows instead. (File-backed jsonl sources emit
+        // immutable per-message rows and keep the plain upsert below.)
+        {
+            let mut snapshots: std::collections::HashSet<(&str, &str, &str)> =
+                std::collections::HashSet::new();
+            for r in records {
+                let p = r.path.as_str();
+                if p.ends_with(".db") || p.ends_with(".sqlite") {
+                    snapshots.insert((r.agent, p, r.session_id.as_str()));
+                }
+            }
+            if !snapshots.is_empty() {
+                let mut del = tx
+                    .prepare("DELETE FROM records WHERE agent = ?1 AND path = ?2 AND session_id = ?3")
+                    .map_err(|e| e.to_string())?;
+                for (agent, path, sid) in snapshots {
+                    del.execute(rusqlite::params![agent, path, sid])
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        // One-time repair: the old Codex parser stored every
+        // `token_usage_record` / `token_count` row as model "unknown" with
+        // the cached tokens folded into `input` (and keyed the session id
+        // off the rollout filename instead of the payload). The fixed parser
+        // emits the same usage with the real model, split cache buckets and
+        // payload session ids, which would otherwise double-count alongside
+        // the stale rows. Drop stale "unknown" rows for files this scan now
+        // resolves with a real model; pruned files we can no longer re-parse
+        // keep their rows. (Unknown rows a fresh scan still produces are
+        // re-inserted below, so the delete is a no-op for them.)
+        {
+            let mut resolved: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for r in records {
+                if r.agent == AGENT_CODEX && r.model != "unknown" && !r.model.is_empty() {
+                    resolved.insert(r.path.as_str());
+                }
+            }
+            if !resolved.is_empty() {
+                let mut del = tx
+                    .prepare("DELETE FROM records WHERE agent = ?1 AND model = 'unknown' AND path = ?2")
+                    .map_err(|e| e.to_string())?;
+                for path in resolved {
+                    del.execute(rusqlite::params![AGENT_CODEX, path])
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        }
         let mut stmt = tx
             .prepare(
                 "INSERT INTO records (agent, path, session_id, ts, model, title, cwd, \
@@ -129,6 +180,9 @@ pub fn all() -> Result<Vec<UsageRecord>, String> {
             "Claude Code" => AGENT_CLAUDE,
             "Codex CLI" => AGENT_CODEX,
             "OpenCode" => AGENT_OPENCODE,
+            "CommandCode" => AGENT_COMMANDCODE,
+            "FreeBuff" => AGENT_FREEBUFF,
+            "OSAgent" => AGENT_OSAGENT,
             _ => continue,
         };
         records.push(UsageRecord {

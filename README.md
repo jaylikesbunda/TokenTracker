@@ -4,7 +4,7 @@ Every AI coding token and dollar your agents burn — in your system tray.
 
 A desktop app that blends two ideas:
 
-- **ccusage-style tracking** — parses your local agent usage data (Claude Code, Codex CLI, OpenCode) into daily/weekly/monthly totals, per-model costs and session history. No account, no API key needed.
+- **ccusage-style tracking** — parses your local agent usage data (Claude Code, Codex CLI, OpenCode, CommandCode, OSAgent, FreeBuff) into daily/weekly/monthly totals, per-model costs and session history. No account, no API key needed.
 - **CodexBar-style live limits** — shows live provider quota windows (Claude Code 5-hour/weekly tiers, Codex rate limits + credits) with reset countdowns, reusing the logins you already have.
 
 Built with [Tauri v2](https://v2.tauri.app/) (Rust + web UI). Windows NSIS installers and Linux Debian packages are built automatically by GitHub Actions.
@@ -28,8 +28,11 @@ Built with [Tauri v2](https://v2.tauri.app/) (Rust + web UI). Windows NSIS insta
 | Agent | Location | Notes |
 | --- | --- | --- |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | per-assistant-message token usage; cost computed from bundled LiteLLM pricing |
-| Codex CLI | `~/.codex/sessions/**/*.jsonl` and `~/.codex/state_*.sqlite` (`threads` table) | legacy JSONL + new SQLite store |
+| Codex CLI | `~/.codex/sessions/**/*.jsonl` and `~/.codex/state_*.sqlite` (`threads` table) | per-response `token_usage_record` / legacy `token_count` events with model resolved via `turn_context`; cached tokens split out; sqlite index enriches titles and covers pruned sessions |
 | OpenCode | `~/.local/share/opencode/opencode.db` | session table already contains cost + tokens |
+| CommandCode | `~/.commandcode/projects/**/*.jsonl` (+ sibling `.meta.json` titles) | per-message `usage` with billed `costUsd`; `*.checkpoints.jsonl` skipped |
+| OSAgent | `~/.osagent/osagent.db` | `session_transcript` tokens joined to `sessions` model/title |
+| FreeBuff | `~/.config/freebuff-desktop/projects/*/desktop-v2.db` | assistant `messages.metrics_json.usage` per turn; credit billing so cost reprices from sheet ($0 unpriced) |
 
 Pricing data (`src-tauri/pricing.json`) is a curated subset of LiteLLM's `model_prices_and_context_window.json`, refreshed with `python scripts/fetch_pricing.py`. Unknown models price at $0 and are flagged in the UI.
 
