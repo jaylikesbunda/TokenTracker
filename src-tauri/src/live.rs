@@ -1179,9 +1179,15 @@ mod tests {
 
     #[test]
     fn parses_current_usage_list_payload() {
-        let today = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S.000Z");
+        // The "old" entry must fall inside the current calendar month for the
+        // month-total assertion, so derive its date from today (a hardcoded
+        // date falls into last month as real time passes).
+        let now = chrono::Utc::now();
+        let today = now.format("%Y-%m-%dT%H:%M:%S.000Z").to_string();
+        let earlier_this_month =
+            format!("{}-{:02}-05T00:00:00.000Z", now.year(), now.month());
         let raw = format!(
-            r#";0x00006762;((self.$R=self.$R||{{}})["server-fn:1"]=[],($R=>$R[0]=[$R[1]={{id:"usg_1",timeCreated:$R[2]=new Date("{today}"),model:"deepseek-v4-flash",cost:68370,keyID:"k1",enrichment:$R[4]={{plan:"lite"}}}},$R[5]={{id:"usg_2",timeCreated:new Date("2026-08-01T00:00:00.000Z"),model:"kimi-k3",cost:100000000}}])($R["server-fn:1"]))"#
+            r#";0x00006762;((self.$R=self.$R||{{}})["server-fn:1"]=[],($R=>$R[0]=[$R[1]={{id:"usg_1",timeCreated:$R[2]=new Date("{today}"),model:"deepseek-v4-flash",cost:68370,keyID:"k1",enrichment:$R[4]={{plan:"lite"}}}},$R[5]={{id:"usg_2",timeCreated:new Date("{earlier_this_month}"),model:"kimi-k3",cost:100000000}}])($R["server-fn:1"]))"#
         );
         let (windows, stats) = parse_server_payload(&raw);
         assert!(windows.is_empty());
@@ -1189,7 +1195,7 @@ mod tests {
         let today_row = stats.iter().find(|(l, _)| l == "Today").unwrap();
         assert_eq!(today_row.1, "$0.00"); // 68370 micro-cents rounds below a cent
         let month_row = stats.iter().find(|(l, _)| l == "This month").unwrap();
-        assert_eq!(month_row.1, "$1.00"); // old entry still counted in month total
+        assert_eq!(month_row.1, "$1.00"); // earlier entry still counted in month total
     }
 
     #[test]

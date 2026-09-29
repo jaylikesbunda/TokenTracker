@@ -1,5 +1,6 @@
 mod auth;
 mod cache;
+mod explore;
 mod history;
 mod live;
 mod model;
@@ -278,9 +279,6 @@ fn scan_all(state: &AppState) -> RefreshResult {
     let osagent = sources::osagent::scan(&mut cache, &mut errors);
     records.extend(osagent.records);
 
-    let freebuff = sources::freebuff::scan(&mut cache, &mut errors);
-    records.extend(freebuff.records);
-
     drop(cache);
 
     // Persist what we scanned so pruned/rotated source files never shrink
@@ -359,29 +357,53 @@ fn short_window_label(label: &str) -> String {
     short
 }
 
+/// One compact tooltip line per provider, e.g. `Codex: 5H: 42% W: 18% M: 9%`.
+fn quota_line(q: &model::QuotaProvider) -> String {
+    let name = q.name.split_whitespace().next().unwrap_or(&q.name);
+    let parts: Vec<String> = q
+        .windows
+        .iter()
+        .take(3)
+        .map(|w| format!("{}: {:.0}%", short_window_label(&w.label), w.used_percent))
+        .collect();
+    format!("{}: {}", name, parts.join(" "))
+}
+
+/// Build the tray hover text: today/week spend, then rate-limit windows for
+/// the providers that actually have live data (Codex first, then whatever
+/// else is available, up to three). Windows tray tooltips are capped at 128
+/// chars, so whole lines are dropped rather than truncated mid-line.
+fn tray_tooltip(result: &RefreshResult) -> String {
+    const CAP: usize = 125;
+    let mut tooltip = format!(
+        "TokenTracker · Today ${:.2} · Week ${:.2}",
+        result.today.cost, result.week.cost
+    );
+
+    let mut providers: Vec<&model::QuotaProvider> =
+        result.quotas.iter().filter(|q| !q.windows.is_empty()).collect();
+    providers.sort_by_key(|q| match q.id.as_str() {
+        "codex" => 0,
+        "anthropic" => 1,
+        "opencode" => 2,
+        _ => 3,
+    });
+
+    for q in providers.into_iter().take(3) {
+        let line = quota_line(q);
+        if tooltip.chars().count() + 1 + line.chars().count() > CAP {
+            break;
+        }
+        tooltip.push('\n');
+        tooltip.push_str(&line);
+    }
+    tooltip
+}
+
 fn update_tray(app: &AppHandle, result: &RefreshResult) {
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_menu(Some(tray_menu(app, Some(result))));
-        let mut tooltip = format!(
-            "TokenTracker · Today ${:.2} · Week ${:.2}",
-            result.today.cost, result.week.cost
-        );
-        for q in &result.quotas {
-            if q.windows.is_empty() {
-                continue;
-            }
-            let parts: Vec<String> = q
-                .windows
-                .iter()
-                .take(3)
-                .map(|w| format!("{} {:.0}%", short_window_label(&w.label), w.used_percent))
-                .collect();
-            tooltip.push_str(&format!("\n{}: {}", q.name, parts.join(" · ")));
-        }
-        // Windows tray tooltips are capped at 128 chars.
-        if tooltip.chars().count() > 125 {
-            tooltip = tooltip.chars().take(122).collect::<String>() + "...";
-        }
+        let tooltip = tray_tooltip(result);
         let _ = tray.set_tooltip(Some(tooltip.as_str()));
     }
 }
@@ -509,6 +531,24 @@ fn clear_opencode_curl() -> Result<(), String> {
     Ok(())
 }
 
+/// Hour-bucketed usage facts + full session list for the Explore/Sessions/
+/// Models tabs (the UI filters and groups them client-side).
+#[tauri::command]
+async fn usage_facts() -> Result<explore::Facts, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let records = history::all()?;
+        Ok(explore::build_facts(&records))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Save a CSV/JSON export into the user's Downloads folder.
+#[tauri::command]
+fn save_export(filename: String, content: String) -> Result<String, String> {
+    explore::save_export(&filename, &content)
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
@@ -559,12 +599,89 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             refresh,
             open_data_dir,
+            usage_facts,
+            save_export,
             quit_app,
             save_opencode_curl,
             clear_opencode_curl
         ])
         .run(tauri::generate_context!())
         .expect("error while running TokenTracker");
+}
+
+#[cfg(test)]
+mod tooltip_tests {
+    use super::*;
+    use model::{QuotaProvider, QuotaWindow};
+
+    fn provider(id: &str, name: &str, windows: Vec<(&str, f64)>) -> QuotaProvider {
+        QuotaProvider {
+            id: id.into(),
+            name: name.into(),
+            status: "ok".into(),
+            message: String::new(),
+            plan: None,
+            windows: windows
+                .into_iter()
+                .map(|(label, used_percent)| QuotaWindow { label: label.into(), used_percent, resets_at: None })
+                .collect(),
+            credits: None,
+            credits_unlimited: false,
+            stats: vec![],
+        }
+    }
+
+    fn result_with(quotas: Vec<QuotaProvider>) -> RefreshResult {
+        RefreshResult {
+            generated_at: 0,
+            today: Totals::default(),
+            week: Totals::default(),
+            month: Totals::default(),
+            all: Totals::default(),
+            agents: vec![],
+            days: vec![],
+            sessions: vec![],
+            quotas,
+            errors: vec![],
+        }
+    }
+
+    #[test]
+    fn lists_available_providers_codex_first() {
+        let result = result_with(vec![
+            provider("anthropic", "Claude Code", vec![("5-Hour", 12.4), ("7-Day (All)", 3.0)]),
+            provider("codex", "Codex CLI", vec![("Primary", 41.9), ("Secondary", 7.0)]),
+        ]);
+        let tip = tray_tooltip(&result);
+        let lines: Vec<&str> = tip.lines().collect();
+        assert_eq!(lines[0], "TokenTracker · Today $0.00 · Week $0.00");
+        assert_eq!(lines[1], "Codex: P: 42% S: 7%");
+        assert_eq!(lines[2], "Claude: 5H: 12% 7D: 3%");
+    }
+
+    #[test]
+    fn unavailable_providers_are_skipped() {
+        let result = result_with(vec![
+            provider("codex", "Codex CLI", vec![]),
+            provider("anthropic", "Claude Code", vec![("5-Hour", 10.0)]),
+            provider("opencode", "OpenCode", vec![("Rolling", 57.0), ("Weekly", 12.0), ("Monthly", 3.0)]),
+        ]);
+        let tip = tray_tooltip(&result);
+        let lines: Vec<&str> = tip.lines().collect();
+        assert_eq!(lines[1], "Claude: 5H: 10%");
+        assert_eq!(lines[2], "OpenCode: R: 57% W: 12% M: 3%");
+    }
+
+    #[test]
+    fn stays_within_windows_tooltip_cap() {
+        let result = result_with(vec![
+            provider("codex", "Codex CLI", vec![("Primary", 91.0), ("Secondary", 82.0)]),
+            provider("anthropic", "Claude Code", vec![("5-Hour", 70.0), ("7-Day (All)", 60.0)]),
+            provider("opencode", "OpenCode", vec![("Rolling", 57.0), ("Weekly", 12.0), ("Monthly", 3.0)]),
+        ]);
+        let tip = tray_tooltip(&result);
+        assert!(tip.chars().count() <= 128, "tooltip too long: {}", tip.chars().count());
+    }
 }
 
 #[cfg(test)]

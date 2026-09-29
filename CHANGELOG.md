@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0] - 2026-09-29
+
+### Added
+- Tabs: Overview, Explore, Sessions, Models & projects.
+- Filters (range, agent, model, project) and saved views.
+- Explore charts, KPIs, breakdown table, activity heatmap.
+- Session detail drawer and searchable session table.
+- Custom table columns and sorting.
+- Overview insights and change badges.
+- CSV/JSON export and copy.
+- Display settings: currency, token format, UTC, week start.
+
+### Changed
+- Black theme with white accents; header logo removed.
+- Same project folder no longer listed twice.
+
+### Removed
+- FreeBuff, ZCode, Devin and Cursor tracking.
+
 ## [0.3.0] - 2026-09-10
 
 ### Added

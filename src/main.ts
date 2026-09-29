@@ -1,6 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./styles.css";
+import { F, Sum, cacheHit, fetchFacts, sumRows, totalTokens, projectLabel } from "./data";
+import {
+  AGENT_COLORS,
+  AGENT_MONOGRAMS,
+  DEFAULT_PREFS,
+  dayStart,
+  esc,
+  fmtDate,
+  fmtMoney,
+  fmtPct,
+  fmtTokens,
+  parts,
+  prefs,
+  updatePrefs,
+} from "./prefs";
+import { TabId, currentFacts, getTab, renderActive, setActiveTab, setFacts, toast } from "./explore";
 
 interface Totals {
   cost: number;
@@ -77,49 +93,10 @@ interface RefreshResult {
   errors: string[];
 }
 
-const AGENT_COLORS: Record<string, string> = {
-  "Claude Code": "#b08a5a",
-  "Codex CLI": "#6a9b80",
-  OpenCode: "#8f9bb8",
-  CommandCode: "#7aa2c4",
-  OSAgent: "#a98bc4",
-  FreeBuff: "#c4a27a",
-};
-
-const AGENT_MONOGRAMS: Record<string, string> = {
-  "Claude Code": "CC",
-  "Codex CLI": "CX",
-  OpenCode: "OC",
-  CommandCode: "CM",
-  OSAgent: "OA",
-  FreeBuff: "FB",
-};
-
 let result: RefreshResult | null = null;
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
-
-const esc = (s: string): string =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-function fmtMoney(v: number, digits = 2): string {
-  if (v >= 1000) return `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  return `$${v.toFixed(digits)}`;
-}
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1000)}k`;
-  return String(n);
-}
-
-function fmtDate(secs: number): string {
-  const d = new Date(secs * 1000);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 
 function fmtCountdown(secs: number): string {
   if (secs <= 0) return "resetting…";
@@ -134,12 +111,46 @@ function fmtCountdown(secs: number): string {
 // stats cards
 // ---------------------------------------------------------------------------
 
-function totalsCard(label: string, t: Totals): string {
+function deltaHtml(cur: number, prev: number | null, what: string): string {
+  if (prev === null || !(prev > 0)) return "";
+  const pct = (cur - prev) / prev;
+  const cls = Math.abs(pct) < 0.005 ? "flat" : pct > 0 ? "up" : "down";
+  const arrow = cls === "flat" ? "•" : pct > 0 ? "▲" : "▼";
+  return `<span class="delta ${cls}" title="vs ${what}">${arrow} ${Math.abs(pct * 100).toFixed(0)}%</span>`;
+}
+
+/** Sum of usage facts in [from, to) unix seconds, or null when facts aren't loaded. */
+function factsSum(from: number, to: number): Sum | null {
+  const f = currentFacts();
+  if (!f) return null;
+  return sumRows(f.rows.filter((r) => r[F.H] * 3600 >= from && r[F.H] * 3600 < to));
+}
+
+function periodDeltas(): (string | null)[] {
+  const now = parts(Math.floor(Date.now() / 1000), false);
+  const d = (off: number) => dayStart(now.y, now.m, now.d + off, false);
+  const pairs: [[number, number], [number, number], string][] = [
+    [[d(0), d(1)], [d(-1), d(0)], "yesterday"],
+    [[d(-6), d(1)], [d(-13), d(-6)], "the previous 7 days"],
+    [
+      [dayStart(now.y, now.m, 1, false), d(1)],
+      [dayStart(now.y, now.m - 1, 1, false), dayStart(now.y, now.m - 1, 1 + now.d, false)],
+      "last month, same days",
+    ],
+  ];
+  return pairs.map(([cur, prev, what]) => {
+    const c = factsSum(cur[0], cur[1]);
+    const p = factsSum(prev[0], prev[1]);
+    return c && p ? deltaHtml(c.cost, p.cost, what) : null;
+  });
+}
+
+function totalsCard(label: string, t: Totals, delta = ""): string {
   const total = t.input + t.output + t.cache_creation + t.cache_read;
   return `
     <div class="stat-card">
       <div class="stat-label">${label}</div>
-      <div class="stat-cost">${fmtMoney(t.cost)}</div>
+      <div class="stat-cost">${fmtMoney(t.cost)}${delta}</div>
       <div class="stat-sub">${fmtTokens(total)} tokens · ${t.sessions} sessions</div>
       <div class="stat-bar">
         <div class="stat-bar-in" style="width:${Math.min(100, total / 1_000_000)}%"></div>
@@ -148,11 +159,60 @@ function totalsCard(label: string, t: Totals): string {
 }
 
 function renderStats() {
+  const [dToday, dWeek, dMonth] = periodDeltas();
   $("stats-grid").innerHTML = [
-    totalsCard("Today", result!.today),
-    totalsCard("This week", result!.week),
-    totalsCard("This month", result!.month),
+    totalsCard("Today", result!.today, dToday ?? ""),
+    totalsCard("Last 7 days", result!.week, dWeek ?? ""),
+    totalsCard("This month", result!.month, dMonth ?? ""),
     totalsCard("All time", result!.all),
+  ].join("");
+}
+
+function insightCard(label: string, value: string, sub = ""): string {
+  return `<div class="kpi"><div class="kpi-label">${esc(label)}</div><div class="kpi-val">${esc(value)}</div>${sub ? `<div class="kpi-sub" title="${esc(sub)}">${esc(sub)}</div>` : ""}</div>`;
+}
+
+function renderInsights() {
+  const f = currentFacts();
+  const panel = $("insights-panel");
+  if (!f || !f.rows.length) {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.classList.remove("hidden");
+  const now = parts(Math.floor(Date.now() / 1000), false);
+  const from30 = dayStart(now.y, now.m, now.d - 29, false);
+  const tomorrow = dayStart(now.y, now.m, now.d + 1, false);
+  const rows = f.rows.filter((r) => r[F.H] * 3600 >= from30 && r[F.H] * 3600 < tomorrow);
+  const sum = sumRows(rows);
+  const sessions = f.sessions.filter((s) => s.ts >= from30 && s.ts < tomorrow);
+
+  const last7 = factsSum(dayStart(now.y, now.m, now.d - 6, false), tomorrow);
+  const mtd = factsSum(dayStart(now.y, now.m, 1, false), tomorrow);
+  const daysInMonth = new Date(now.y, now.m + 1, 0).getDate();
+  const burn = last7 ? last7.cost / 7 : 0;
+  const projected = mtd ? mtd.cost + burn * (daysInMonth - now.d) : 0;
+
+  const top = (idx: number) => {
+    const m = new Map<number, number>();
+    for (const r of rows) m.set(r[idx], (m.get(r[idx]) ?? 0) + r[F.COST]);
+    const best = [...m.entries()].sort((a, b) => b[1] - a[1])[0];
+    return best ? { name: f.strings[best[0]], cost: best[1] } : null;
+  };
+  const topModel = top(F.M);
+  const topProject = top(F.C);
+  const priciest = sessions.reduce<(typeof sessions)[number] | null>((a, s) => (!a || s.cost > a.cost ? s : a), null);
+  const share = (c: number) => (sum.cost > 0 ? fmtPct(c / sum.cost) : "–");
+
+  $("insights").innerHTML = [
+    insightCard("Cache hit rate", fmtPct(cacheHit(sum)), "share of prompt tokens read from cache"),
+    insightCard("Saved by caching", fmtMoney(sum.saved), "vs paying full input price"),
+    insightCard("Daily burn (7d avg)", fmtMoney(burn), `${fmtMoney(burn * 30)} per 30 days`),
+    insightCard("Projected this month", fmtMoney(projected), `${fmtMoney(mtd?.cost ?? 0)} so far`),
+    insightCard("Top model", topModel?.name ?? "–", topModel ? `${fmtMoney(topModel.cost)} · ${share(topModel.cost)} of spend` : ""),
+    insightCard("Top project", topProject ? projectLabel(topProject.name) : "–", topProject ? `${fmtMoney(topProject.cost)} · ${share(topProject.cost)} of spend` : ""),
+    insightCard("Priciest session", priciest ? fmtMoney(priciest.cost) : "–", priciest ? priciest.title || "(untitled)" : ""),
+    insightCard("Avg cost / session", sessions.length ? fmtMoney(sum.cost / sessions.length) : "–", `${sessions.length} sessions · ${fmtTokens(totalTokens(sum) / Math.max(1, sessions.length))} tok avg`),
   ].join("");
 }
 
@@ -478,7 +538,24 @@ async function refreshUI() {
   }
   $("loading").classList.add("hidden");
   $("dashboard").classList.remove("hidden");
+  renderOverview();
+  if (countdownTimer === null) {
+    countdownTimer = window.setInterval(tickCountdowns, 1000);
+  }
+  // usage facts feed the deltas, insights and the other tabs
+  try {
+    setFacts(await fetchFacts());
+    renderStats();
+    renderInsights();
+  } catch (e) {
+    toast(`Could not load usage details: ${String(e)}`);
+  }
+}
+
+function renderOverview() {
+  if (!result) return;
   renderStats();
+  renderInsights();
   renderQuotas();
   renderChart();
   renderAgentCards();
@@ -486,13 +563,104 @@ async function refreshUI() {
   renderErrors();
   renderStatus();
   tickCountdowns();
-  if (countdownTimer === null) {
-    countdownTimer = window.setInterval(tickCountdowns, 1000);
-  }
+}
+
+// ---------------------------------------------------------------------------
+// settings popover
+// ---------------------------------------------------------------------------
+
+const SYMBOLS = ["$", "€", "£", "¥", "₹", "kr", "CHF", "R$"];
+
+function renderSettings() {
+  const opt = (v: string, l: string, cur: string) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(l)}</option>`;
+  const syms = SYMBOLS.includes(prefs.symbol) ? SYMBOLS : [...SYMBOLS, prefs.symbol];
+  $("settings-pop").innerHTML = `
+    <div class="pop-row"><label for="pf-sym">Currency symbol</label>
+      <select id="pf-sym">${syms.map((s) => opt(s, s, prefs.symbol)).join("")}</select></div>
+    <div class="pop-row"><label for="pf-rate">Rate (1 USD = )</label>
+      <input id="pf-rate" type="number" step="any" min="0.0001" value="${prefs.rate}"></div>
+    <p class="pop-note">Costs are computed in USD; the rate is a manual multiplier for display and doesn't affect exports.</p>
+    <div class="pop-row"><label for="pf-tok">Token numbers</label>
+      <select id="pf-tok">${opt("compact", "Compact (1.2M)", prefs.tokens)}${opt("full", "Full (1,234,567)", prefs.tokens)}</select></div>
+    <div class="pop-row"><label for="pf-tz">Time zone</label>
+      <select id="pf-tz">${opt("local", "Local time", prefs.utc ? "utc" : "local")}${opt("utc", "UTC", prefs.utc ? "utc" : "local")}</select></div>
+    <div class="pop-row"><label for="pf-ws">Week starts on</label>
+      <select id="pf-ws">${opt("1", "Monday", String(prefs.weekStart))}${opt("0", "Sunday", String(prefs.weekStart))}</select></div>
+    <div class="pop-row"><button class="btn btn-ghost btn-sm" id="pf-reset">Reset to defaults</button></div>`;
+}
+
+function applyPrefsChange() {
+  renderOverview();
+  renderActive();
+}
+
+function wireSettings() {
+  const pop = $("settings-pop");
+  $("btn-settings").addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (pop.classList.contains("hidden")) {
+      renderSettings();
+      pop.classList.remove("hidden");
+    } else {
+      pop.classList.add("hidden");
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!pop.classList.contains("hidden") && !pop.contains(e.target as Node)) pop.classList.add("hidden");
+  });
+  pop.addEventListener("change", (e) => {
+    const t = e.target as HTMLInputElement | HTMLSelectElement;
+    switch (t.id) {
+      case "pf-sym":
+        updatePrefs({ symbol: t.value });
+        break;
+      case "pf-rate": {
+        const v = parseFloat(t.value);
+        updatePrefs({ rate: isFinite(v) && v > 0 ? v : 1 });
+        t.value = String(prefs.rate);
+        break;
+      }
+      case "pf-tok":
+        updatePrefs({ tokens: t.value === "full" ? "full" : "compact" });
+        break;
+      case "pf-tz":
+        updatePrefs({ utc: t.value === "utc" });
+        break;
+      case "pf-ws":
+        updatePrefs({ weekStart: t.value === "0" ? 0 : 1 });
+        break;
+      default:
+        return;
+    }
+    applyPrefsChange();
+  });
+  pop.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).id === "pf-reset") {
+      updatePrefs(DEFAULT_PREFS);
+      renderSettings();
+      applyPrefsChange();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// tabs
+// ---------------------------------------------------------------------------
+
+function wireTabs() {
+  $("tabs").addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-tab]");
+    if (b) setActiveTab(b.dataset.tab as TabId);
+  });
+  $("btn-all-sessions").addEventListener("click", () => setActiveTab("sessions"));
 }
 
 async function init() {
-  $("btn-refresh").addEventListener("click", refreshUI);
+  wireTabs();
+  wireSettings();
+  $("btn-refresh").addEventListener("click", () => {
+    refreshUI().catch(() => {});
+  });
   await listen("refreshed", () => {
     const el = $("last-updated");
     el.textContent = "updated just now";
@@ -502,21 +670,13 @@ async function init() {
   window.addEventListener("resize", () => {
     if (resizeTimer !== null) window.clearTimeout(resizeTimer);
     resizeTimer = window.setTimeout(() => {
-      if (result) renderChart();
+      if (!result) return;
+      if (getTab() === "overview") renderChart();
+      else renderActive();
     }, 150);
   });
   window.setInterval(() => {
-    invoke<RefreshResult>("refresh", { force: false }).then((r) => {
-      result = r;
-      renderStats();
-      renderQuotas();
-      renderChart();
-      renderAgentCards();
-      renderSessions();
-      renderErrors();
-      renderStatus();
-      tickCountdowns();
-    });
+    refreshUI().catch(() => {});
   }, 60_000);
 }
 

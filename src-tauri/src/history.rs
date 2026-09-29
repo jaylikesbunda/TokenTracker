@@ -10,7 +10,9 @@ use std::path::PathBuf;
 use rusqlite::Connection;
 
 use crate::model::UsageRecord;
-use crate::sources::{AGENT_CLAUDE, AGENT_CODEX, AGENT_COMMANDCODE, AGENT_FREEBUFF, AGENT_OPENCODE, AGENT_OSAGENT};
+use crate::sources::{
+    AGENT_CLAUDE, AGENT_CODEX, AGENT_COMMANDCODE, AGENT_OPENCODE, AGENT_OSAGENT,
+};
 
 pub fn db_path() -> Option<PathBuf> {
     let home = crate::sources::home_dir()?;
@@ -181,8 +183,9 @@ pub fn all() -> Result<Vec<UsageRecord>, String> {
             "Codex CLI" => AGENT_CODEX,
             "OpenCode" => AGENT_OPENCODE,
             "CommandCode" => AGENT_COMMANDCODE,
-            "FreeBuff" => AGENT_FREEBUFF,
             "OSAgent" => AGENT_OSAGENT,
+            // rows stored for removed sources (FreeBuff, ZCode, Devin, Cursor) stay in
+            // the db but are no longer surfaced
             _ => continue,
         };
         records.push(UsageRecord {

@@ -4,7 +4,7 @@ Every AI coding token and dollar your agents burn — in your system tray.
 
 A desktop app that blends two ideas:
 
-- **ccusage-style tracking** — parses your local agent usage data (Claude Code, Codex CLI, OpenCode, CommandCode, OSAgent, FreeBuff) into daily/weekly/monthly totals, per-model costs and session history. No account, no API key needed.
+- **ccusage-style tracking** — parses your local agent usage data (Claude Code, Codex CLI, OpenCode, CommandCode, OSAgent) into daily/weekly/monthly totals, per-model costs and session history. No account, no API key needed.
 - **CodexBar-style live limits** — shows live provider quota windows (Claude Code 5-hour/weekly tiers, Codex rate limits + credits) with reset countdowns, reusing the logins you already have.
 
 Built with [Tauri v2](https://v2.tauri.app/) (Rust + web UI). Windows NSIS installers and Linux Debian packages are built automatically by GitHub Actions.
@@ -14,12 +14,17 @@ Built with [Tauri v2](https://v2.tauri.app/) (Rust + web UI). Windows NSIS insta
 
 ## Features
 
-- **System tray presence** — tray icon with today's spend, left-click toggles the dashboard, close-to-tray
+- **System tray presence** — tray icon with today's spend, hover shows live rate-limit windows (Codex first, then other providers with data), left-click toggles the dashboard, close-to-tray
 - **Totals** — today / this week / this month / all time, cost + tokens + sessions
 - **14-day spend chart** — stacked per agent
-- **Live quotas** — Claude Code OAuth usage windows (`five_hour`, `seven_day`, …) and Codex `/wham/usage` rate limits + credits, with reset countdowns
+- **Live quotas** — Claude Code OAuth usage windows (`five_hour`, `seven_day`, …) and Codex `/wham/usage` rate limits + credits, with reset countdowns. The tray tooltip mirrors these (`Codex: P: 42% S: 7%`), falling back to whichever providers have live data
 - **Per-agent cards** — models used, unpriced-model warnings, last activity, open data folder
 - **Session history** — recent conversations with tokens and cost
+- **Explore** — filter by date range, agent, model and project; chart any metric stacked by agent/model/project as bars, area or lines; hover for exact values, click a bucket to zoom; weekday × hour heatmap
+- **Sessions & models tabs** — searchable/sortable tables, session detail drawer, per-model and per-project breakdowns with cache hit rate and cost per 1M tokens
+- **Your layout** — show/hide/reorder table columns, save named views, choose currency symbol/rate, compact or full token counts, local or UTC time
+- **Export** — CSV / JSON (saved to your Downloads folder) or copy to clipboard from any chart or table
+- **Insights** — cache hit rate, money saved by caching, daily burn and month projection, top model/project
 - **Incremental scanning** — session files are cached by mtime/size; refreshes are fast
 - **Privacy-first** — everything parses local files; quota checks reuse existing tokens from opencode's `auth.json`, `~/.claude/credentials.json` and `~/.codex/auth.json`. Nothing is stored or sent anywhere else.
 
@@ -32,7 +37,6 @@ Built with [Tauri v2](https://v2.tauri.app/) (Rust + web UI). Windows NSIS insta
 | OpenCode | `~/.local/share/opencode/opencode.db` | session table already contains cost + tokens |
 | CommandCode | `~/.commandcode/projects/**/*.jsonl` (+ sibling `.meta.json` titles) | per-message `usage` with billed `costUsd`; `*.checkpoints.jsonl` skipped |
 | OSAgent | `~/.osagent/osagent.db` | `session_transcript` tokens joined to `sessions` model/title |
-| FreeBuff | `~/.config/freebuff-desktop/projects/*/desktop-v2.db` | assistant `messages.metrics_json.usage` per turn; credit billing so cost reprices from sheet ($0 unpriced) |
 
 Pricing data (`src-tauri/pricing.json`) is a curated subset of LiteLLM's `model_prices_and_context_window.json`, refreshed with `python scripts/fetch_pricing.py`. Unknown models price at $0 and are flagged in the UI.
 

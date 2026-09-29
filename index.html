@@ -10,12 +10,6 @@
     <div id="app">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-mark">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="12" cy="12" r="9" stroke="#92b2da" stroke-width="2.6"/>
-              <text x="12" y="16.3" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" font-size="12.5" font-weight="700" fill="#afc6e4">T</text>
-            </svg>
-          </div>
           <div class="brand-text">
             <span class="brand-name">TokenTracker</span>
             <span class="brand-tag">agent token &amp; cost tracker</span>
@@ -23,6 +17,7 @@
         </div>
         <div class="topbar-actions">
           <span class="last-updated" id="last-updated">—</span>
+          <button class="btn btn-ghost" id="btn-settings" title="Display settings">⚙</button>
           <button class="btn btn-primary" id="btn-refresh">↻ Refresh</button>
         </div>
       </header>
@@ -36,32 +31,56 @@
         <div id="dashboard" class="hidden">
           <div id="errors" class="errors hidden"></div>
 
-          <section class="stats-grid" id="stats-grid"></section>
+          <nav class="tabs" id="tabs">
+            <button data-tab="overview" class="on">Overview</button>
+            <button data-tab="explore">Explore</button>
+            <button data-tab="sessions">Sessions</button>
+            <button data-tab="models">Models &amp; projects</button>
+          </nav>
+          <div id="filterbar" class="filterbar hidden"></div>
 
-          <section class="panel" id="quota-panel">
-            <div class="panel-head">
-              <h2>Live quotas</h2>
-              <span class="panel-sub">reusing your existing logins · no new credentials</span>
-            </div>
-            <div class="quota-grid" id="quota-grid"></div>
-          </section>
+          <div id="tab-overview" class="tab">
+            <section class="stats-grid" id="stats-grid"></section>
 
-          <section class="panel">
-            <div class="panel-head">
-              <h2>Spend — last 14 days</h2>
-            </div>
-            <div class="chart-wrap" id="chart"></div>
-          </section>
+            <section class="panel" id="insights-panel">
+              <div class="panel-head">
+                <h2>Insights</h2>
+                <span class="panel-sub">last 30 days</span>
+              </div>
+              <div class="kpi-row" id="insights"></div>
+            </section>
 
-          <section class="agent-grid" id="agent-grid"></section>
+            <section class="panel" id="quota-panel">
+              <div class="panel-head">
+                <h2>Live quotas</h2>
+                <span class="panel-sub">reusing your existing logins · no new credentials</span>
+              </div>
+              <div class="quota-grid" id="quota-grid"></div>
+            </section>
 
-          <section class="panel">
-            <div class="panel-head">
-              <h2>Recent sessions</h2>
-              <span class="panel-sub">grouped per conversation</span>
-            </div>
-            <div class="table-wrap" id="sessions-table"></div>
-          </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Spend — last 14 days</h2>
+              </div>
+              <div class="chart-wrap" id="chart"></div>
+            </section>
+
+            <section class="agent-grid" id="agent-grid"></section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Recent sessions</h2>
+                <span class="panel-sub">grouped per conversation</span>
+                <span class="spacer"></span>
+                <button class="btn btn-ghost btn-sm" id="btn-all-sessions">View all →</button>
+              </div>
+              <div class="table-wrap" id="sessions-table"></div>
+            </section>
+          </div>
+
+          <div id="tab-explore" class="tab hidden"></div>
+          <div id="tab-sessions" class="tab hidden"></div>
+          <div id="tab-models" class="tab hidden"></div>
         </div>
       </main>
 
@@ -69,6 +88,9 @@
         <span id="status-left">Ready</span>
         <span id="status-right">TokenTracker</span>
       </footer>
+      <div id="drawer" class="drawer hidden"></div>
+      <div id="toast" class="toast hidden"></div>
+      <div id="settings-pop" class="pop hidden"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
