@@ -9,7 +9,8 @@ A desktop app that blends two ideas:
 
 Built with [Tauri v2](https://v2.tauri.app/) (Rust + web UI). Windows NSIS installers and Linux Debian packages are built automatically by GitHub Actions.
 
-<img width="954" height="592" alt="image" src="https://github.com/user-attachments/assets/17767692-0c6b-48af-af6f-21c52a858a71" />
+<img width="948" height="724" alt="image" src="https://github.com/user-attachments/assets/fd71729d-d0b2-405f-8acd-943c5b17e6d1" />
+
 
 
 ## Features
